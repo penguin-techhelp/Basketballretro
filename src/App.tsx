@@ -9,10 +9,12 @@ import { DynastyFranchise } from './components/DynastyFranchise';
 import { TournamentPlayoffs } from './components/TournamentPlayoffs';
 import { ThreePointContest } from './components/ThreePointContest';
 import { DunkContest } from './components/DunkContest';
+import { ArcadeIntro } from './components/ArcadeIntro';
 
 type AppView = 'TITLE' | 'QUICK_SETUP' | 'MATCH' | 'FRANCHISE' | 'TOURNAMENT' | 'THREE_POINT' | 'DUNK_CONTEST';
 
 export default function App() {
+  const [showIntro, setShowIntro] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<AppView>('TITLE');
   const [franchise, setFranchise] = useState<FranchiseSave>(loadFranchise);
   const [dailyBonusAvailable, setDailyBonusAvailable] = useState<boolean>(true);
@@ -299,6 +301,13 @@ export default function App() {
           © 1995 Tuxedo Penguin Gaming Sports Studio · "It’s In The Game!"
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowIntro(true)}
+            className="hover:text-amber-400 font-pixel text-[10px] text-zinc-400 transition-colors"
+          >
+            ▶ REPLAY INTRO
+          </button>
+          <span aria-hidden="true">·</span>
           <span>Web Audio API FM-Synth</span>
           <span aria-hidden="true">·</span>
           <span>Offline Ready</span>
@@ -306,6 +315,9 @@ export default function App() {
           <span>Gopi Mode 60 FPS</span>
         </div>
       </footer>
+
+      {/* Arcade Launch Intro */}
+      {showIntro && <ArcadeIntro onComplete={() => setShowIntro(false)} />}
     </div>
   );
 }

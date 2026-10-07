@@ -85,6 +85,11 @@ export interface Ball {
   isThreePoint: boolean;
   isAlleyOop: boolean;
   curveFactor: number;
+  isShotAttempt?: boolean;
+  willMake?: boolean;
+  hasScored?: boolean;
+  targetHoopX?: number;
+  targetHoopY?: number;
 }
 
 export interface InGamePlayer {
