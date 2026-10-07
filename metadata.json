@@ -1,0 +1,6 @@
+{
+  "name": "Retro Hoops '95",
+  "description": "16-bit arcade basketball simulator combining NBA Jam excitement with franchise dynasty depth, 3v3 streetball, 5v5 pro arena, card market, and contests.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
