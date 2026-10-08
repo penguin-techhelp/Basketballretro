@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { sound } from '../services/soundEngine';
 import { Play, Volume2, VolumeX, FastForward } from 'lucide-react';
+import mascotImg from '../assets/images/tuxedo_penguin_referee_1791412674059.jpg';
 
 interface ArcadeIntroProps {
   onComplete: () => void;
@@ -92,7 +93,7 @@ export const ArcadeIntro: React.FC<ArcadeIntroProps> = ({ onComplete }) => {
         <div className="flex flex-col items-center text-center animate-fade-in px-4">
           <div className="relative mb-6">
             <img
-              src="/src/assets/images/tuxedo_penguin_referee_1791412674059.jpg"
+              src={mascotImg}
               alt="Tuxedo Penguin Gaming Mascot"
               className="w-32 h-32 md:w-40 md:h-40 rounded-full border-4 border-amber-400 shadow-2xl object-cover ring-8 ring-amber-500/20 animate-pulse"
             />

@@ -1,6 +1,8 @@
 import React from 'react';
 import { FranchiseSave, GameSettings } from '../types/game';
 import { sound } from '../services/soundEngine';
+import mascotImg from '../assets/images/tuxedo_penguin_referee_1791412674059.jpg';
+import coverImg from '../assets/images/retro_hoops_cover_1791412686658.jpg';
 import {
   Trophy,
   Flame,
@@ -52,7 +54,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       <div className="w-full flex items-center justify-between py-2 border-b border-zinc-800 mb-4 px-2">
         <div className="flex items-center gap-3">
           <img
-            src="/src/assets/images/tuxedo_penguin_referee_1791412674059.jpg"
+            src={mascotImg}
             alt="Tuxedo Penguin Gaming Mascot"
             className="w-10 h-10 rounded-full border border-amber-400 shadow object-cover"
           />
@@ -97,7 +99,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Hero Marquee Cover Art */}
       <div className="w-full relative rounded-xl overflow-hidden border-2 border-zinc-700 bg-zinc-950 mb-6 shadow-2xl">
         <img
-          src="/src/assets/images/retro_hoops_cover_1791412686658.jpg"
+          src={coverImg}
           alt="Retro Hoops 95 Arcade Cover"
           className="w-full h-48 md:h-64 object-cover opacity-80"
         />
