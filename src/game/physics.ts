@@ -10,6 +10,13 @@ export interface Rim {
   flexVelocity: number;
 }
 
+export interface CourtBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 export interface CourtConfig {
   width: number;
   height: number;
@@ -17,6 +24,7 @@ export interface CourtConfig {
   leftRim: Rim;
   rightRim: Rim;
   threePointRadius: number;
+  bounds: CourtBounds;
 }
 
 export function createCourtConfig(isHalfCourt: boolean): CourtConfig {
@@ -31,6 +39,7 @@ export function createCourtConfig(isHalfCourt: boolean): CourtConfig {
       leftRim: { x: 580, y: height / 2, z: 10, radius: 14, flexY: 0, flexVelocity: 0 },
       rightRim: { x: 580, y: height / 2, z: 10, radius: 14, flexY: 0, flexVelocity: 0 },
       threePointRadius: 210,
+      bounds: { left: 220, right: 620, top: 82, bottom: 442 },
     };
   }
 
@@ -41,6 +50,7 @@ export function createCourtConfig(isHalfCourt: boolean): CourtConfig {
     leftRim: { x: 80, y: height / 2, z: 10, radius: 14, flexY: 0, flexVelocity: 0 },
     rightRim: { x: width - 80, y: height / 2, z: 10, radius: 14, flexY: 0, flexVelocity: 0 },
     threePointRadius: 215,
+    bounds: { left: 60, right: 900, top: 82, bottom: 442 },
   };
 }
 
@@ -139,10 +149,40 @@ export class BasketballMatchEngine {
     // Initialize Home Players
     for (let i = 0; i < count; i++) {
       const card = homeRoster[i] || homeRoster[0];
-      const startX = this.court.isHalfCourt 
-        ? (i === 0 ? 300 : 250 + i * 35) 
-        : (i === 0 ? midX - 45 : 220 + (i % 3) * 60);
-      const startY = 160 + i * 65;
+      let startX: number;
+      let startY: number;
+
+      if (this.court.isHalfCourt) {
+        // 3v3 Streetball Spacing: PG at top of key, wings spread wide to the perimeters
+        if (i === 0) {
+          startX = 290;
+          startY = midY;
+        } else if (i === 1) {
+          startX = 360;
+          startY = midY - 110;
+        } else {
+          startX = 360;
+          startY = midY + 110;
+        }
+      } else {
+        // 5v5 Full-court Spacing: Spread across backcourt and frontcourt, wings wide
+        if (i === 0) {
+          startX = midX - 55;
+          startY = midY;
+        } else if (i === 1) {
+          startX = midX - 165;
+          startY = midY - 115;
+        } else if (i === 2) {
+          startX = midX - 165;
+          startY = midY + 115;
+        } else if (i === 3) {
+          startX = midX - 260;
+          startY = midY - 65;
+        } else {
+          startX = midX - 260;
+          startY = midY + 65;
+        }
+      }
 
       this.players.push({
         id: `home-${card.id}-${i}`,
@@ -169,10 +209,40 @@ export class BasketballMatchEngine {
     // Initialize Away Players
     for (let i = 0; i < count; i++) {
       const card = awayRoster[i] || awayRoster[0];
-      const startX = this.court.isHalfCourt 
-        ? 440 + i * 35 
-        : (i === 0 ? midX + 45 : 700 - (i % 3) * 60);
-      const startY = 160 + i * 65;
+      let startX: number;
+      let startY: number;
+
+      if (this.court.isHalfCourt) {
+        // 3v3 Away Defenders spaced opposite their individual matchups
+        if (i === 0) {
+          startX = 360;
+          startY = midY;
+        } else if (i === 1) {
+          startX = 425;
+          startY = midY - 95;
+        } else {
+          startX = 425;
+          startY = midY + 95;
+        }
+      } else {
+        // 5v5 Full-court Away Players spread symmetrically
+        if (i === 0) {
+          startX = midX + 55;
+          startY = midY;
+        } else if (i === 1) {
+          startX = midX + 165;
+          startY = midY - 115;
+        } else if (i === 2) {
+          startX = midX + 165;
+          startY = midY + 115;
+        } else if (i === 3) {
+          startX = midX + 260;
+          startY = midY - 65;
+        } else {
+          startX = midX + 260;
+          startY = midY + 65;
+        }
+      }
 
       this.players.push({
         id: `away-${card.id}-${i}`,
@@ -291,8 +361,13 @@ export class BasketballMatchEngine {
     if (this.turnoverPendingTimer <= 0) {
       this.timeRemaining -= dt;
       if (this.timeRemaining <= 0) {
-        this.handleQuarterEnd();
-        return;
+        // If a shot attempt is currently airborne, let it finish for a dramatic buzzer beater!
+        if (this.ball.state === 'in_air' && this.ball.isShotAttempt) {
+          // Wait for shot to score or miss
+        } else {
+          this.handleQuarterEnd();
+          return;
+        }
       }
 
       this.shotClock -= dt;
@@ -315,6 +390,31 @@ export class BasketballMatchEngine {
     this.rimFlexAngleLeft *= damping;
     this.rimFlexAngleRight += -k * this.rimFlexAngleRight * dt;
     this.rimFlexAngleRight *= damping;
+
+    // Dynamically manage user control:
+    // If user's team has possession, always control the player who currently has the ball!
+    if (!this.autoModeActive) {
+      if (this.possession === 'home') {
+        const homeCarrier = this.players.find(p => p.hasBall && p.team === 'home');
+        if (homeCarrier && !homeCarrier.isUserControlled) {
+          this.players.forEach(p => { if (p.team === 'home') p.isUserControlled = false; });
+          homeCarrier.isUserControlled = true;
+        }
+      } else {
+        // On defense: ensure at least one home player is user-controlled (closest to opponent ball carrier)
+        const hasControlledHome = this.players.some(p => p.team === 'home' && p.isUserControlled);
+        if (!hasControlledHome) {
+          const homePlayers = this.players.filter(p => p.team === 'home');
+          const oppCarrier = this.players.find(p => p.hasBall);
+          if (oppCarrier && homePlayers.length > 0) {
+            homePlayers.sort((a, b) => Math.hypot(a.x - oppCarrier.x, a.y - oppCarrier.y) - Math.hypot(b.x - oppCarrier.x, b.y - oppCarrier.y));
+            homePlayers[0].isUserControlled = true;
+          } else if (homePlayers.length > 0) {
+            homePlayers[0].isUserControlled = true;
+          }
+        }
+      }
+    }
 
     // Update Players & Ball
     this.updatePlayers(dt);
@@ -400,10 +500,10 @@ export class BasketballMatchEngine {
       p.vy *= 0.85;
 
       // Boundary clamp
-      const minX = this.court.isHalfCourt ? 220 : 68;
-      const maxX = this.court.width - 68;
-      const minY = 90;
-      const maxY = this.court.height - 70;
+      const minX = this.court.bounds.left + 12;
+      const maxX = this.court.bounds.right - 12;
+      const minY = this.court.bounds.top + 10;
+      const maxY = this.court.bounds.bottom - 10;
 
       p.x = Math.max(minX, Math.min(maxX, p.x));
       p.y = Math.max(minY, Math.min(maxY, p.y));
@@ -426,7 +526,7 @@ export class BasketballMatchEngine {
       }
     }
 
-    // Soft player-to-player repulsion to prevent sprite overlap glitches
+    // Player-to-player physical collision and floor spacing repulsion
     for (let i = 0; i < this.players.length; i++) {
       for (let j = i + 1; j < this.players.length; j++) {
         const p1 = this.players[i];
@@ -434,14 +534,28 @@ export class BasketballMatchEngine {
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 18 && dist > 0) {
-          const overlap = (18 - dist) * 0.5;
+
+        // 1. Hard physical body collision box (prevent overlapping on the same spot)
+        const minBodyDist = 28;
+        if (dist < minBodyDist && dist > 0.001) {
+          const overlap = (minBodyDist - dist) * 0.5;
           const nx = dx / dist;
           const ny = dy / dist;
           p1.x -= nx * overlap;
           p1.y -= ny * overlap;
           p2.x += nx * overlap;
           p2.y += ny * overlap;
+        }
+
+        // 2. Active Teammate Spacing (keeps teammates spread out across floor zones)
+        if (p1.team === p2.team && dist < 72 && dist > 0.001) {
+          const spacingRepulsion = ((72 - dist) / 72) * 1.8;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          p1.x -= nx * spacingRepulsion;
+          p1.y -= ny * spacingRepulsion;
+          p2.x += nx * spacingRepulsion;
+          p2.y += ny * spacingRepulsion;
         }
       }
     }
@@ -511,14 +625,20 @@ export class BasketballMatchEngine {
   private handleAiPlayer(p: InGamePlayer, ballCarrier: InGamePlayer | undefined, dt: number) {
     const targetRim = this.getTargetRim(p.team);
     const isOnOffense = p.team === this.possession;
+    const midY = this.court.height / 2;
+    const teammates = this.players.filter(pl => pl.team === p.team);
+    const opponents = this.players.filter(pl => pl.team !== p.team);
 
+    // ==========================================
+    // 1. IF THIS PLAYER HAS THE BALL
+    // ==========================================
     if (p.hasBall) {
       const distToRim = Math.hypot(p.x - targetRim.x, p.y - targetRim.y);
 
-      // In 3v3, AI clears out if needed
+      // In 3v3 Streetball, AI clears out behind the arc if needed
       if (this.court.isHalfCourt && !this.possessionCleared) {
         const clearX = 260;
-        const clearY = this.court.height / 2;
+        const clearY = midY;
         const angle = Math.atan2(clearY - p.y, clearX - p.x);
         p.vx = Math.cos(angle) * 170;
         p.vy = Math.sin(angle) * 170;
@@ -526,54 +646,193 @@ export class BasketballMatchEngine {
         return;
       }
 
-      const targetX = targetRim.x + (p.team === 'home' ? -180 : 180);
-      const targetY = targetRim.y;
+      // Ball carrier drives / attacks the basket with realistic offensive pacing
+      const attackOffsetX = p.team === 'home' ? -150 : 150;
+      const targetX = targetRim.x + attackOffsetX;
+      const targetY = targetRim.y + Math.sin(Date.now() / 850) * 40;
       const angle = Math.atan2(targetY - p.y, targetX - p.x);
 
       p.vx = Math.cos(angle) * (140 + p.card.stats.speed * 0.8);
       p.vy = Math.sin(angle) * (140 + p.card.stats.speed * 0.8);
       p.facing = p.vx > 0 ? 'right' : 'left';
 
-      // Decide to shoot if in range or shot clock low
+      // Decide to shoot if in good range or shot clock expires
       if (distToRim < 190 || this.shotClock < 3.5 || (distToRim < 260 && Math.random() < 0.015)) {
         p.shotHoldTime = 0.50;
         this.executeShot(p);
-      } else if (Math.random() < 0.01) {
+      } else if (Math.random() < 0.012) {
         this.executePass(p);
       }
-    } else if (isOnOffense) {
-      const targetX = targetRim.x + (p.team === 'home' ? -260 : 260) + Math.sin(Date.now() / 800 + p.x) * 60;
-      const targetY = 120 + ((p.id.charCodeAt(3) * 70) % 260);
-      const angle = Math.atan2(targetY - p.y, targetX - p.x);
-      p.vx = Math.cos(angle) * 110;
-      p.vy = Math.sin(angle) * 110;
-      p.facing = p.vx > 0 ? 'right' : 'left';
-    } else {
-      const opponentToGuard = ballCarrier && Math.hypot(p.x - ballCarrier.x, p.y - ballCarrier.y) < 180
-        ? ballCarrier
-        : this.players.find(opp => opp.team !== p.team) || ballCarrier;
+      return;
+    }
 
-      if (opponentToGuard) {
-        const oppRim = this.getTargetRim(opponentToGuard.team);
-        const guardX = (opponentToGuard.x * 2 + oppRim.x) / 3;
-        const guardY = (opponentToGuard.y * 2 + oppRim.y) / 3;
-
-        const angle = Math.atan2(guardY - p.y, guardX - p.x);
-        const dist = Math.hypot(guardX - p.x, guardY - p.y);
-        if (dist > 25) {
-          p.vx = Math.cos(angle) * (130 + p.card.stats.defense * 0.7);
-          p.vy = Math.sin(angle) * (130 + p.card.stats.defense * 0.7);
-        }
-        p.facing = opponentToGuard.x > p.x ? 'right' : 'left';
-
-        if (dist < 40 && opponentToGuard.hasBall && Math.random() < 0.01) {
-          this.executeSteal(p);
+    // ==========================================
+    // 2. LOOSE BALL / REBOUND PURSUIT (ONLY CLOSEST PLAYER CHASES, REST SPACE OUT)
+    // ==========================================
+    const isLooseBall = !ballCarrier && (this.ball.state === 'in_air' || this.ball.state === 'bouncing' || this.ball.state === 'rim_bounce');
+    if (isLooseBall && this.turnoverPendingTimer <= 0) {
+      // Find closest teammate to ball
+      let closestTeammate = teammates[0];
+      let minDist = Infinity;
+      for (const t of teammates) {
+        const d = Math.hypot(t.x - this.ball.x, t.y - this.ball.y);
+        if (d < minDist) {
+          minDist = d;
+          closestTeammate = t;
         }
       }
+
+      // If this player is closest, charge for the loose ball / rebound
+      if (p.id === closestTeammate.id) {
+        const angle = Math.atan2(this.ball.y - p.y, this.ball.x - p.x);
+        p.vx = Math.cos(angle) * (150 + p.card.stats.speed * 0.8);
+        p.vy = Math.sin(angle) * (150 + p.card.stats.speed * 0.8);
+        p.facing = p.vx > 0 ? 'right' : 'left';
+        return;
+      }
+      // Other teammates do NOT dogpile! They space out according to offensive/defensive sets below.
+    }
+
+    // ==========================================
+    // 3. OFFENSE (OFF-BALL TEAMMATES SPREAD OUT ACROSS THE FLOOR)
+    // ==========================================
+    if (isOnOffense) {
+      const offBallTeammates = teammates.filter(pl => !pl.hasBall);
+      const offBallIndex = Math.max(0, offBallTeammates.findIndex(pl => pl.id === p.id));
+
+      let targetX = p.x;
+      let targetY = p.y;
+
+      if (this.court.isHalfCourt) {
+        // 3v3 Half-Court Tactical Spacing:
+        // Slot 0: Top Wing / 3-Point perimeter (Y: midY - 110)
+        // Slot 1: Bottom Wing / Corner (Y: midY + 110)
+        // Slot 2: Top of key (if 3 off-ball)
+        if (offBallIndex === 0) {
+          targetX = 350 + Math.cos(Date.now() / 1600) * 25;
+          targetY = midY - 110 + Math.sin(Date.now() / 2000) * 18;
+        } else if (offBallIndex === 1) {
+          targetX = 350 + Math.sin(Date.now() / 1600) * 25;
+          targetY = midY + 110 + Math.cos(Date.now() / 2000) * 18;
+        } else {
+          targetX = 280 + Math.cos(Date.now() / 1400) * 20;
+          targetY = midY + Math.sin(Date.now() / 1500) * 20;
+        }
+      } else {
+        // 5v5 Full-Court Floor Spacing:
+        const dir = p.team === 'home' ? 1 : -1;
+        const rimX = targetRim.x;
+        const carrierX = ballCarrier ? ballCarrier.x : this.ball.x;
+        const isTransition = p.team === 'home' ? carrierX < (this.court.width / 2) : carrierX > (this.court.width / 2);
+
+        if (isTransition) {
+          // Fast-break lanes spread wide along sidelines
+          if (offBallIndex === 0) {
+            targetX = carrierX + dir * 140;
+            targetY = midY - 125;
+          } else if (offBallIndex === 1) {
+            targetX = carrierX + dir * 140;
+            targetY = midY + 125;
+          } else if (offBallIndex === 2) {
+            targetX = rimX - dir * 100;
+            targetY = midY;
+          } else {
+            targetX = carrierX - dir * 90;
+            targetY = midY + (offBallIndex === 3 ? -60 : 60);
+          }
+        } else {
+          // Half-Court Settled 5-Out Floor Spacing:
+          if (offBallIndex === 0) {
+            // Left Wing
+            targetX = rimX - dir * 190;
+            targetY = midY - 115 + Math.sin(Date.now() / 2200) * 15;
+          } else if (offBallIndex === 1) {
+            // Right Wing
+            targetX = rimX - dir * 190;
+            targetY = midY + 115 + Math.cos(Date.now() / 2200) * 15;
+          } else if (offBallIndex === 2) {
+            // Top of Key spacer
+            targetX = rimX - dir * 265;
+            targetY = midY + Math.sin(Date.now() / 1900) * 25;
+          } else if (offBallIndex === 3) {
+            // Left Corner
+            targetX = rimX - dir * 75;
+            targetY = midY - 130;
+          } else {
+            // Right Corner / Low Post
+            targetX = rimX - dir * 75;
+            targetY = midY + 130;
+          }
+        }
+      }
+
+      // Smooth movement towards designated spacing spot
+      const dx = targetX - p.x;
+      const dy = targetY - p.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 22) {
+        const angle = Math.atan2(dy, dx);
+        const speed = Math.min(dist * 4, 125 + p.card.stats.speed * 0.5);
+        p.vx = Math.cos(angle) * speed;
+        p.vy = Math.sin(angle) * speed;
+      } else {
+        p.vx *= 0.5;
+        p.vy *= 0.5;
+      }
+      p.facing = targetRim.x > p.x ? 'right' : 'left';
+      return;
+    }
+
+    // ==========================================
+    // 4. DEFENSE (MAN-TO-MAN ASSIGNMENT: EACH DEFENDER GUARDS THEIR OWN MAN)
+    // ==========================================
+    const myDefIndex = Math.max(0, teammates.findIndex(pl => pl.id === p.id));
+    const assignedMatchup = opponents[myDefIndex % opponents.length] || ballCarrier || opponents[0];
+
+    if (!assignedMatchup) return;
+
+    let guardTargetX = assignedMatchup.x;
+    let guardTargetY = assignedMatchup.y;
+
+    if (assignedMatchup.hasBall) {
+      // ON-BALL DEFENSE: Stay firmly between the dribbler and the basket
+      const toBasketX = targetRim.x - assignedMatchup.x;
+      const toBasketY = targetRim.y - assignedMatchup.y;
+      const bDist = Math.hypot(toBasketX, toBasketY) || 1;
+      // Position 35px in front of dribbler towards the hoop
+      guardTargetX = assignedMatchup.x + (toBasketX / bDist) * 35;
+      guardTargetY = assignedMatchup.y + (toBasketY / bDist) * 35;
+    } else {
+      // OFF-BALL DEFENSE: Help-and-recover position between assigned matchup and rim
+      // Sags slightly into passing lane, staying spread out with their assigned man
+      guardTargetX = assignedMatchup.x * 0.72 + targetRim.x * 0.28;
+      guardTargetY = assignedMatchup.y * 0.75 + midY * 0.25;
+    }
+
+    const gdx = guardTargetX - p.x;
+    const gdy = guardTargetY - p.y;
+    const gDist = Math.hypot(gdx, gdy);
+
+    if (gDist > 18) {
+      const angle = Math.atan2(gdy, gdx);
+      const defSpeed = Math.min(gDist * 4.5, 130 + p.card.stats.defense * 0.75);
+      p.vx = Math.cos(angle) * defSpeed;
+      p.vy = Math.sin(angle) * defSpeed;
+    } else {
+      p.vx *= 0.5;
+      p.vy *= 0.5;
+    }
+
+    p.facing = assignedMatchup.x > p.x ? 'right' : 'left';
+
+    // Steal attempt if on-ball and within reach
+    if (assignedMatchup.hasBall && gDist < 38 && Math.random() < 0.012) {
+      this.executeSteal(p);
     }
   }
 
-  // PASS MECHANIC (Chest pass / Double-tap Alley-Oop) - CANNOT SCORE FREE POINTS
+  // PASS MECHANIC (Chest pass / Directional Pass / Double-tap Alley-Oop) - CANNOT SCORE FREE POINTS
   public executePass(passer: InGamePlayer) {
     if (!passer.hasBall) return;
 
@@ -581,13 +840,38 @@ export class BasketballMatchEngine {
     if (teammates.length === 0) return;
 
     const targetRim = this.getTargetRim(passer.team);
-    teammates.sort((a, b) => {
-      const distA = Math.hypot(a.x - targetRim.x, a.y - targetRim.y);
-      const distB = Math.hypot(b.x - targetRim.x, b.y - targetRim.y);
-      return distA - distB;
-    });
 
-    const target = teammates[0];
+    // Directional passing if user is holding directional inputs
+    let aimX = 0;
+    let aimY = 0;
+    if (passer.isUserControlled) {
+      if (this.keys['ArrowLeft'] || this.keys['KeyA']) aimX -= 1;
+      if (this.keys['ArrowRight'] || this.keys['KeyD']) aimX += 1;
+      if (this.keys['ArrowUp'] || this.keys['KeyW']) aimY -= 1;
+      if (this.keys['ArrowDown'] || this.keys['KeyS']) aimY += 1;
+    }
+
+    let target: InGamePlayer;
+    if (aimX !== 0 || aimY !== 0) {
+      const aimAngle = Math.atan2(aimY, aimX);
+      const sortedByAim = [...teammates].sort((a, b) => {
+        const angleA = Math.atan2(a.y - passer.y, a.x - passer.x);
+        const angleB = Math.atan2(b.y - passer.y, b.x - passer.x);
+        const diffA = Math.abs(Math.atan2(Math.sin(angleA - aimAngle), Math.cos(angleA - aimAngle)));
+        const diffB = Math.abs(Math.atan2(Math.sin(angleB - aimAngle), Math.cos(angleB - aimAngle)));
+        return diffA - diffB;
+      });
+      target = sortedByAim[0];
+    } else {
+      // Default: prioritize teammate closest to open basket or leading the break
+      const sortedByPosition = [...teammates].sort((a, b) => {
+        const distA = Math.hypot(a.x - targetRim.x, a.y - targetRim.y);
+        const distB = Math.hypot(b.x - targetRim.x, b.y - targetRim.y);
+        return distA - distB;
+      });
+      target = sortedByPosition[0];
+    }
+
     const distToRim = Math.hypot(target.x - targetRim.x, target.y - targetRim.y);
     const isAlleyOop = distToRim < 130 && passer.card.stats.clutch > 75;
 
@@ -601,22 +885,24 @@ export class BasketballMatchEngine {
     this.ball.isAlleyOop = isAlleyOop;
     this.ball.isShotAttempt = false; // PASSES NEVER SCORE FREE POINTS!
     this.ball.hasScored = false;
+    this.ball.lastTouchTeam = passer.team;
 
     const dx = target.x - passer.x;
     const dy = target.y - passer.y;
     const dist = Math.hypot(dx, dy);
-    const speed = isAlleyOop ? 380 : 520;
-    const travelTime = dist / speed;
+    const speed = isAlleyOop ? 380 : 540;
+    const travelTime = Math.max(0.2, dist / speed);
 
     this.ball.vx = (dx / dist) * speed;
     this.ball.vy = (dy / dist) * speed;
-    this.ball.vz = isAlleyOop ? 22 : 8;
+    this.ball.vz = isAlleyOop ? 22 : 6;
 
     sound.playDribble();
 
     if (isAlleyOop) {
       target.actionState = 'dunking';
       target.actionTimer = travelTime + 0.4;
+      target.z = 7.0;
       this.triggerAnnouncer('ALLEY-OOP LOB!', 'Up for the alley-oop!');
     }
   }
@@ -641,6 +927,7 @@ export class BasketballMatchEngine {
         this.ball.state = 'bouncing';
         this.ball.carrierId = null;
         this.ball.isShotAttempt = false;
+        this.ball.lastTouchTeam = defender.team;
         this.ball.vx = (defender.x - ballCarrier.x) * 4;
         this.ball.vy = (defender.y - ballCarrier.y) * 4;
         this.ball.vz = 6;
@@ -751,6 +1038,15 @@ export class BasketballMatchEngine {
 
   // Finishes monster slam at rim
   public executeDunkFinish(dunker: InGamePlayer, rim: Rim) {
+    // 3v3 Half-court Clear Rule Check
+    if (this.court.isHalfCourt && !this.possessionCleared) {
+      sound.playWhistle();
+      this.triggerAnnouncer('TAKE IT BACK OUT TO THE ARC!', 'Must clear ball outside arc!');
+      dunker.actionState = 'dribbling';
+      dunker.z = 0;
+      return;
+    }
+
     dunker.hasBall = false;
     dunker.actionState = 'celebrating';
     dunker.actionTimer = 0.5;
@@ -772,6 +1068,65 @@ export class BasketballMatchEngine {
     this.handleBucketScored(rim);
   }
 
+  // Detects when the ball crosses outside the court boundaries ("Out of Bounds")
+  private checkBallOutOfBounds(): boolean {
+    if (this.ball.state === 'held' || this.ball.state === 'scored') return false;
+    if (this.turnoverPendingTimer > 0 || this.tipOffActive || this.isGameOver) return false;
+
+    const b = this.court.bounds;
+    const margin = 4;
+
+    const isPastBoundary = (
+      this.ball.x < b.left - margin ||
+      this.ball.x > b.right + margin ||
+      this.ball.y < b.top - margin ||
+      this.ball.y > b.bottom + margin
+    );
+
+    if (isPastBoundary) {
+      // If the ball hit the floor outside or is moving out
+      if (this.ball.z <= 3.5 || Math.abs(this.ball.vx) > 30 || Math.abs(this.ball.vy) > 30) {
+        this.handleOutOfBounds(this.ball.x, this.ball.y);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public handleOutOfBounds(outX: number, outY: number) {
+    if (this.turnoverPendingTimer > 0 || this.isGameOver) return;
+
+    sound.playWhistle();
+    this.triggerAnnouncer('OUT OF BOUNDS!', 'Out of bounds!');
+
+    const clampedX = Math.max(this.court.bounds.left + 20, Math.min(this.court.bounds.right - 20, outX));
+    const clampedY = Math.max(this.court.bounds.top + 20, Math.min(this.court.bounds.bottom - 20, outY));
+
+    this.floatingTexts.push({
+      id: Math.random().toString(),
+      text: 'OUT OF BOUNDS',
+      x: clampedX,
+      y: clampedY - 20,
+      color: '#EF4444',
+      opacity: 1.0,
+      scale: 1.25,
+      duration: 1.5,
+    });
+
+    const lastTouch = this.ball.lastTouchTeam || this.possession;
+    const newPossession: 'home' | 'away' = lastTouch === 'home' ? 'away' : 'home';
+
+    // Neutralize ball movement immediately to prevent drifting into infinity
+    this.ball.state = 'bouncing';
+    this.ball.vx = 0;
+    this.ball.vy = 0;
+    this.ball.vz = 0;
+    this.ball.isShotAttempt = false;
+
+    this.turnoverPendingTimer = 1.0;
+    this.pendingTurnoverTeam = newPossession;
+  }
+
   // Update Ball In Air / Bouncing / Scoring
   private updateBall(dt: number) {
     if (this.ball.state === 'held') return;
@@ -781,6 +1136,11 @@ export class BasketballMatchEngine {
     this.ball.y += this.ball.vy * dt;
     this.ball.z += this.ball.vz * dt - 0.5 * gravity * dt * dt;
     this.ball.vz -= gravity * dt;
+
+    // 0. CHECK OUT OF BOUNDS IMMEDIATELY
+    if (this.checkBallOutOfBounds()) {
+      return;
+    }
 
     // Check Rim Collisions
     const targetRim = this.getTargetRim(this.possession);
@@ -796,6 +1156,16 @@ export class BasketballMatchEngine {
       this.ball.z <= 10.3 &&
       this.ball.vz < 0
     ) {
+      if (this.court.isHalfCourt && !this.possessionCleared) {
+        // Reject invalid uncleared shot
+        sound.playWhistle();
+        this.triggerAnnouncer('NO BASKET! MUST CLEAR THE ARC!');
+        this.ball.isShotAttempt = false;
+        this.ball.state = 'rim_bounce';
+        this.ball.vz = 8;
+        return;
+      }
+
       this.ball.hasScored = true;
       this.ball.isShotAttempt = false;
       this.ball.state = 'scored';
@@ -806,7 +1176,95 @@ export class BasketballMatchEngine {
       return;
     }
 
-    // 2. RIM CLANK & BOUNCE CHECK (Misses CANNOT score)
+    // 2. MID-AIR BLOCK & SWAT ("REJECTED!")
+    if (this.ball.state === 'in_air' && this.ball.isShotAttempt && this.turnoverPendingTimer <= 0) {
+      for (const p of this.players) {
+        if (p.team !== this.possession && p.actionState === 'blocking') {
+          const dist = Math.hypot(p.x - this.ball.x, p.y - this.ball.y);
+          if (dist < 32 && this.ball.z < 9.5 && this.ball.z > 3.5) {
+            sound.playBlockSwat();
+            this.ball.isShotAttempt = false; // Cannot score!
+            this.ball.state = 'rim_bounce';
+            this.ball.lastTouchTeam = p.team;
+            const oppRim = this.getTargetRim(this.possession);
+            this.ball.vx = (oppRim.x - this.ball.x > 0 ? -1 : 1) * 150 + (Math.random() - 0.5) * 80;
+            this.ball.vy = (Math.random() - 0.5) * 140;
+            this.ball.vz = 8;
+            this.triggerAnnouncer('REJECTED!', 'Rejected! Swatted away!');
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. IN-AIR PASS RECEPTION & INTERCEPTION (Passes can be caught in flight!)
+    if (this.ball.state === 'in_air' && !this.ball.isShotAttempt && this.turnoverPendingTimer <= 0) {
+      for (const p of this.players) {
+        const dist = Math.hypot(p.x - this.ball.x, p.y - this.ball.y);
+
+        // Friendly reception (teammate catching pass)
+        if (p.team === this.ball.lastTouchTeam && p.actionState !== 'passing') {
+          if (dist < 38 && this.ball.z < 7.5) {
+            const isAlleyOopAttempt = this.ball.isAlleyOop;
+            const wasLeaping = p.actionState === 'dunking' || p.z > 3.0;
+
+            p.hasBall = true;
+            p.actionState = 'dribbling';
+            this.ball.state = 'held';
+            this.ball.carrierId = p.id;
+            this.ball.vx = 0;
+            this.ball.vy = 0;
+            this.ball.vz = 0;
+            this.ball.isShotAttempt = false;
+            this.ball.lastTouchTeam = p.team;
+
+            // Switch user control to pass recipient
+            if (p.team === 'home') {
+              this.players.forEach(pl => { if (pl.team === 'home') pl.isUserControlled = false; });
+              p.isUserControlled = true;
+            }
+
+            sound.playDribble();
+
+            // Alley-oop slam finish if target is leaping or close to rim
+            if (isAlleyOopAttempt && (wasLeaping || distToRimXY < 80)) {
+              const targetRim = this.getTargetRim(p.team);
+              this.executeDunkFinish(p, targetRim);
+            }
+            return;
+          }
+        } else if (p.team !== this.ball.lastTouchTeam) {
+          // Mid-air defensive interception
+          const isContesting = p.actionState === 'blocking' || p.actionState === 'stealing';
+          const interceptChance = isContesting ? 0.70 : (p.card.stats.defense / 100) * 0.35;
+          if (dist < 30 && this.ball.z < 6.0 && Math.random() < interceptChance) {
+            p.hasBall = true;
+            p.actionState = 'dribbling';
+            this.ball.state = 'held';
+            this.ball.carrierId = p.id;
+            this.ball.vx = 0;
+            this.ball.vy = 0;
+            this.ball.vz = 0;
+            this.ball.isShotAttempt = false;
+            this.ball.lastTouchTeam = p.team;
+            this.possession = p.team;
+            this.shotClock = 24.0;
+            if (this.court.isHalfCourt) this.possessionCleared = false;
+
+            if (p.team === 'home') {
+              this.players.forEach(pl => { if (pl.team === 'home') pl.isUserControlled = false; });
+              p.isUserControlled = true;
+            }
+
+            sound.playStealPoke();
+            this.triggerAnnouncer('INTERCEPTED!', 'Pass intercepted!');
+            return;
+          }
+        }
+      }
+    }
+
+    // 4. RIM CLANK & BOUNCE CHECK (Misses CANNOT score)
     if (
       this.ball.state === 'in_air' &&
       distToRimXY <= 26 &&
@@ -823,7 +1281,7 @@ export class BasketballMatchEngine {
       return;
     }
 
-    // 3. Floor bounce
+    // 5. Floor bounce
     if (this.ball.z <= 0) {
       this.ball.z = 0;
       if (Math.abs(this.ball.vz) > 4) {
@@ -839,17 +1297,18 @@ export class BasketballMatchEngine {
       }
     }
 
-    // 4. Loose ball pickup check (Only if NOT pending turnover)
+    // 6. Loose ball pickup check (Only if NOT pending turnover)
     if (this.turnoverPendingTimer <= 0 && this.ball.state !== 'scored') {
       if (this.ball.state === 'bouncing' || this.ball.state === 'rim_bounce') {
         for (const p of this.players) {
           const dist = Math.hypot(p.x - this.ball.x, p.y - this.ball.y);
-          if (dist < 32 && this.ball.z < 4.0) {
+          if (dist < 34 && this.ball.z < 4.5) {
             p.hasBall = true;
             p.actionState = 'dribbling';
             this.ball.state = 'held';
             this.ball.carrierId = p.id;
             this.ball.isShotAttempt = false;
+            this.ball.lastTouchTeam = p.team;
 
             if (p.team !== this.possession) {
               this.possession = p.team;
@@ -857,6 +1316,13 @@ export class BasketballMatchEngine {
               if (this.court.isHalfCourt) {
                 this.possessionCleared = false; // Must clear 3-pt line
               }
+              this.triggerAnnouncer('REBOUND!');
+              sound.playDribble();
+            }
+
+            if (p.team === 'home') {
+              this.players.forEach(pl => { if (pl.team === 'home') pl.isUserControlled = false; });
+              p.isUserControlled = true;
             }
             break;
           }
@@ -866,6 +1332,10 @@ export class BasketballMatchEngine {
   }
 
   private handleBucketScored(rim: Rim) {
+    if (this.court.isHalfCourt && !this.possessionCleared) {
+      return; // Reject any uncleared score
+    }
+
     sound.playSwish();
     this.flexRim(rim, 0.6);
 
@@ -894,8 +1364,14 @@ export class BasketballMatchEngine {
       }
     }
 
-    const bannerText = this.ball.isThreePoint ? 'FROM DOWNTOWN... YES!' : 'IT\'S GOOD!';
-    this.triggerAnnouncer(bannerText);
+    // Check for buzzer beater
+    if (this.timeRemaining <= 0) {
+      sound.speakAnnouncer("It's good at the buzzer! Unbelievable!");
+      this.triggerAnnouncer("IT'S GOOD AT THE BUZZER!");
+    } else {
+      const bannerText = this.ball.isThreePoint ? 'FROM DOWNTOWN... YES!' : 'IT\'S GOOD!';
+      this.triggerAnnouncer(bannerText);
+    }
 
     // Celebration particles
     for (let i = 0; i < 22; i++) {
@@ -930,36 +1406,121 @@ export class BasketballMatchEngine {
     this.turnoverPendingTimer = 0;
     this.possession = newPossession;
     this.shotClock = 24.0;
+
     this.players.forEach(p => {
       p.hasBall = false;
       p.actionState = 'idle';
+      p.vx = 0;
+      p.vy = 0;
+      p.z = 0;
     });
 
     const inbounder = this.players.find(p => p.team === newPossession)!;
     inbounder.hasBall = true;
     inbounder.actionState = 'dribbling';
 
+    // Switch user control if home team gets possession
+    if (newPossession === 'home') {
+      this.players.forEach(p => {
+        if (p.team === 'home') p.isUserControlled = false;
+      });
+      inbounder.isUserControlled = true;
+    }
+
+    const b = this.court.bounds;
+    const midX = this.court.width / 2;
+    const midY = this.court.height / 2;
+
     if (this.court.isHalfCourt) {
-      // Check-ball at top of key
-      inbounder.x = 310;
-      inbounder.y = this.court.height / 2;
-      this.possessionCleared = true; // Starting at top of key is already cleared!
+      // 3v3 Streetball Check-ball at top of key
+      inbounder.x = 290;
+      inbounder.y = midY;
+      inbounder.facing = 'right';
+      this.possessionCleared = true; // Checking ball at the top of key is cleared!
+
+      // Space teammates out wide on the wings
+      const teammates = this.players.filter(p => p.team === newPossession && p.id !== inbounder.id);
+      teammates.forEach((t, idx) => {
+        t.x = 350;
+        t.y = midY + (idx === 0 ? -110 : 110);
+        t.facing = 'right';
+      });
+
+      // Position defenders matched up on their designated men
+      const defenders = this.players.filter(p => p.team !== newPossession);
+      defenders.forEach((d, idx) => {
+        if (idx === 0) {
+          d.x = 360;
+          d.y = midY;
+        } else if (idx === 1) {
+          d.x = 425;
+          d.y = midY - 95;
+        } else {
+          d.x = 425;
+          d.y = midY + 95;
+        }
+        d.facing = 'left';
+      });
     } else {
-      // Full court baseline inbound
-      inbounder.x = newPossession === 'home' ? 95 : this.court.width - 95;
-      inbounder.y = this.court.height / 2;
+      // 5v5 Full court baseline inbound
+      const isHome = newPossession === 'home';
+      inbounder.x = isHome ? b.left + 25 : b.right - 25;
+      inbounder.y = midY;
+      inbounder.facing = isHome ? 'right' : 'left';
+
+      // Spread teammates downcourt into backcourt receiver and wide wing lanes
+      const teammates = this.players.filter(p => p.team === newPossession && p.id !== inbounder.id);
+      teammates.forEach((t, idx) => {
+        if (idx === 0) {
+          t.x = isHome ? b.left + 110 : b.right - 110;
+          t.y = midY - 35;
+        } else if (idx === 1) {
+          t.x = isHome ? b.left + 240 : b.right - 240;
+          t.y = midY - 120;
+        } else if (idx === 2) {
+          t.x = isHome ? b.left + 240 : b.right - 240;
+          t.y = midY + 120;
+        } else {
+          t.x = isHome ? b.left + 420 : b.right - 420;
+          t.y = midY + 60;
+        }
+        t.facing = isHome ? 'right' : 'left';
+      });
+
+      // Position defenders safely spread in transition defense
+      const defenders = this.players.filter(p => p.team !== newPossession);
+      defenders.forEach((d, idx) => {
+        if (idx === 0) {
+          d.x = isHome ? midX - 60 : midX + 60;
+          d.y = midY - 35;
+        } else if (idx === 1) {
+          d.x = isHome ? midX + 40 : midX - 40;
+          d.y = midY - 110;
+        } else if (idx === 2) {
+          d.x = isHome ? midX + 40 : midX - 40;
+          d.y = midY + 110;
+        } else if (idx === 3) {
+          d.x = isHome ? midX + 160 : midX - 160;
+          d.y = midY - 60;
+        } else {
+          d.x = isHome ? midX + 160 : midX - 160;
+          d.y = midY + 60;
+        }
+        d.facing = isHome ? 'left' : 'right';
+      });
     }
 
     this.ball.state = 'held';
     this.ball.carrierId = inbounder.id;
-    this.ball.x = inbounder.x;
-    this.ball.y = inbounder.y;
+    this.ball.x = inbounder.x + (inbounder.facing === 'right' ? 12 : -12);
+    this.ball.y = inbounder.y + 6;
     this.ball.z = 2.5;
     this.ball.vx = 0;
     this.ball.vy = 0;
     this.ball.vz = 0;
     this.ball.isShotAttempt = false;
     this.ball.hasScored = false;
+    this.ball.lastTouchTeam = newPossession;
   }
 
   private flexRim(rim: Rim, amount: number) {
