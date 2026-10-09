@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="ballGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#fb923c" />
+      <stop offset="45%" stop-color="#ea580c" />
+      <stop offset="85%" stop-color="#c2410c" />
+      <stop offset="100%" stop-color="#7c2d12" />
+    </radialGradient>
+    <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.4" />
+      <stop offset="60%" stop-color="#ef4444" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <filter id="pixelate" x="0" y="0">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.8" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#09090b" />
+  <circle cx="256" cy="256" r="230" fill="url(#glowGrad)" />
+
+  <!-- Outer Neon Ring (Arcade Rim) -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#f59e0b" stroke-width="12" stroke-dasharray="16 8" opacity="0.4" />
+
+  <!-- Basketball Core -->
+  <g filter="url(#pixelate)">
+    <circle cx="256" cy="256" r="170" fill="url(#ballGrad)" stroke="#18181b" stroke-width="16" />
+    
+    <!-- Basketball Seams -->
+    <!-- Horizontal Center Seam -->
+    <path d="M 86 256 H 426" stroke="#18181b" stroke-width="14" stroke-linecap="round" />
+    
+    <!-- Vertical Center Seam -->
+    <path d="M 256 86 V 426" stroke="#18181b" stroke-width="14" stroke-linecap="round" />
+    
+    <!-- Left Curve Seam -->
+    <path d="M 136 136 C 220 180 220 332 136 376" fill="none" stroke="#18181b" stroke-width="14" stroke-linecap="round" />
+    
+    <!-- Right Curve Seam -->
+    <path d="M 376 136 C 292 180 292 332 376 376" fill="none" stroke="#18181b" stroke-width="14" stroke-linecap="round" />
+
+    <!-- 16-Bit Specular Highlight -->
+    <path d="M 170 140 C 210 110 260 110 290 125" fill="none" stroke="#fed7aa" stroke-width="12" stroke-linecap="round" opacity="0.75" />
+    <circle cx="160" cy="160" r="12" fill="#fff7ed" opacity="0.8" />
+  </g>
+
+  <!-- Arcade Banner '95 -->
+  <rect x="136" y="370" width="240" height="52" rx="10" fill="#dc2626" stroke="#fef08a" stroke-width="6" />
+  <text x="256" y="406" font-family="'Courier New', monospace" font-size="32" font-weight="900" fill="#fef08a" text-anchor="middle" letter-spacing="4">HOOPS '95</text>
+</svg>

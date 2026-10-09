@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FranchiseSave, GameSettings } from '../types/game';
 import { sound } from '../services/soundEngine';
+import { versionService } from '../services/versionService';
 import mascotImg from '../assets/images/tuxedo_penguin_referee_1791412674059.jpg';
 import coverImg from '../assets/images/retro_hoops_cover_1791412686658.jpg';
 import {
@@ -15,6 +16,9 @@ import {
   Sparkles,
   Coins,
   Cpu,
+  Wifi,
+  WifiOff,
+  RotateCcw,
 } from 'lucide-react';
 
 interface TitleScreenProps {
@@ -34,6 +38,30 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onClaimDailyBonus,
   dailyBonusAvailable,
 }) => {
+  const [versionState, setVersionState] = useState(versionService.getState());
+  const [isCheckingSync, setIsCheckingSync] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    return versionService.subscribe((state) => {
+      setVersionState(state);
+    });
+  }, []);
+
+  const handleManualSync = async () => {
+    setIsCheckingSync(true);
+    setSyncFeedback('Checking...');
+    sound.playCoinSound();
+    const hasUpdate = await versionService.checkForUpdates(true);
+    setIsCheckingSync(false);
+    if (hasUpdate) {
+      setSyncFeedback('New Version Found!');
+    } else {
+      setSyncFeedback('Synced & Latest!');
+      setTimeout(() => setSyncFeedback(null), 3000);
+    }
+  };
+
   const toggleSound = () => {
     const next = !settings.soundEnabled;
     sound.setMuted(!next);
@@ -300,8 +328,36 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             CRT SCANLINES: {settings.crtFilter ? 'ON' : 'OFF'}
           </button>
 
+          {/* Live Internet Sync & Latest Version Status */}
+          <button
+            onClick={handleManualSync}
+            disabled={isCheckingSync || !versionState.isOnline}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded border transition-colors cursor-pointer ${
+              !versionState.isOnline
+                ? 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                : versionState.hasUpdate
+                ? 'bg-amber-600 border-amber-400 text-white font-bold animate-pulse'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700'
+            }`}
+            title="Check connection and ensure you are on the latest build"
+          >
+            {versionState.isOnline ? (
+              <Wifi className={`w-3.5 h-3.5 ${versionState.hasUpdate ? 'text-yellow-300' : 'text-emerald-400'}`} />
+            ) : (
+              <WifiOff className="w-3.5 h-3.5 text-zinc-500" />
+            )}
+            <span className="font-pixel text-[10px]">
+              {syncFeedback
+                ? syncFeedback
+                : versionState.isOnline
+                ? `v${versionState.currentVersion} · SYNCED`
+                : 'OFFLINE MODE'}
+            </span>
+            <RotateCcw className={`w-3 h-3 text-zinc-400 ${isCheckingSync ? 'animate-spin' : ''}`} />
+          </button>
+
           <span className="text-[10px] text-zinc-500">
-            100% In-Browser · Playable Offline Locally · GitHub Pages Ready
+            100% In-Browser · Auto-Syncs Online · Playable Offline Locally
           </span>
         </div>
       </div>

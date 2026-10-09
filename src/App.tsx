@@ -10,6 +10,9 @@ import { TournamentPlayoffs } from './components/TournamentPlayoffs';
 import { ThreePointContest } from './components/ThreePointContest';
 import { DunkContest } from './components/DunkContest';
 import { ArcadeIntro } from './components/ArcadeIntro';
+import { VersionUpdateBanner } from './components/VersionUpdateBanner';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { versionService } from './services/versionService';
 
 type AppView = 'TITLE' | 'QUICK_SETUP' | 'MATCH' | 'FRANCHISE' | 'TOURNAMENT' | 'THREE_POINT' | 'DUNK_CONTEST';
 
@@ -135,8 +138,16 @@ export default function App() {
     return sorted[0];
   };
 
+  // Notify version sync service when entering or exiting active match
+  useEffect(() => {
+    versionService.setMatchState(currentView === 'MATCH');
+  }, [currentView]);
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-between p-3 md:p-6 font-sans">
+      {/* Live Internet Version Sync & Offline Banner */}
+      <VersionUpdateBanner />
+
       {/* Top Bar Contract: 3 zones */}
       <header className="w-full max-w-5xl flex items-center justify-between pb-3 border-b border-zinc-800/80 mb-4">
         {/* Zone 1: Single text element wordmark */}
@@ -187,11 +198,12 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: Primary Action */}
-        <div className="flex items-center gap-3">
+        {/* Zone 3: Primary Action & Install Button */}
+        <div className="flex items-center gap-2 md:gap-3">
+          <PWAInstallButton />
           <button
             onClick={() => handleSelectModeFromTitle('5v5')}
-            className="px-3.5 py-1.5 font-pixel text-[11px] font-bold text-black bg-amber-400 hover:bg-amber-300 rounded shadow transition-colors whitespace-nowrap"
+            className="px-3.5 py-1.5 font-pixel text-[11px] font-bold text-black bg-amber-400 hover:bg-amber-300 rounded shadow transition-colors whitespace-nowrap cursor-pointer"
           >
             FULL COURT TIP-OFF
           </button>
@@ -300,15 +312,24 @@ export default function App() {
         <div>
           © 1995 Tuxedo Penguin Gaming Sports Studio · "It’s In The Game!"
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowIntro(true)}
-            className="hover:text-amber-400 font-pixel text-[10px] text-zinc-400 transition-colors"
+            className="hover:text-amber-400 font-pixel text-[10px] text-zinc-400 transition-colors cursor-pointer"
           >
             ▶ REPLAY INTRO
           </button>
           <span aria-hidden="true">·</span>
-          <span>Web Audio API FM-Synth</span>
+          <button
+            onClick={() => versionService.checkForUpdates(true)}
+            className="hover:text-amber-300 font-pixel text-[10px] text-zinc-400 transition-colors flex items-center gap-1 cursor-pointer"
+            title="Check internet for latest build"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"></span>
+            <span>v1.4.0 · SYNC ACTIVE</span>
+          </button>
+          <span aria-hidden="true">·</span>
+          <span>Web Audio FM-Synth</span>
           <span aria-hidden="true">·</span>
           <span>Offline Ready</span>
           <span aria-hidden="true">·</span>
